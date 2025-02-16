@@ -1,0 +1,139 @@
+---
+- name: Identify host id
+  hosts: proxy
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Install podman packages
+      ansible.builtin.apt:
+        update_cache: true
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - podman
+        - buildah
+        - fuse-overlayfs
+        - slirp4netns
+        - uidmap
+        - containers-storage
+        - docker-compose
+
+    - name: Enable podman
+      ansible.builtin.systemd_service:
+        state: started
+        daemon_reload: true
+        enabled: true
+        name: podman
+
+    - name: Give 15s to podman for restart
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Create storage directories
+      ansible.builtin.file:
+        path: "/var/lib/registry/{{ item }}"
+        state: directory
+        mode: '0755'
+        recurse: true
+      with_items:
+        - "quay"
+        - "ghcr"
+        - "gcr"
+        - "k8s"
+        - "docker"
+
+    - name: Create proxy cache for docker.io
+      containers.podman.podman_container:
+        name: docker
+        image: docker.io/library/registry:2
+        env:
+          REGISTRY_PROXY_REMOTEURL: https://registry-1.docker.io
+          REGISTRY_STORAGE: filesystem
+          REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+          REGISTRY_STORAGE_CACHE_BLOBDESCRIPTOR: inmemory
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        ports:
+          - 5000:5000
+        volumes:
+          - /var/lib/registry/docker:/var/lib/registry
+        detach: true
+        restart: "yes"
+        restart_policy: "always"
+
+    - name: Create proxy cache for registry.k8s.io
+      containers.podman.podman_container:
+        name: k8s
+        image: docker.io/library/registry:2
+        env:
+          REGISTRY_PROXY_REMOTEURL: https://registry.k8s.io
+          REGISTRY_STORAGE: filesystem
+          REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+          REGISTRY_STORAGE_CACHE_BLOBDESCRIPTOR: inmemory
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        ports:
+          - "5001:5000"
+        volumes:
+          - /var/lib/registry/k8s:/var/lib/registry
+        detach: true
+        restart: "yes"
+        restart_policy: "always"
+
+    - name: Create proxy cache for gcr.io
+      containers.podman.podman_container:
+        name: gcr
+        image: docker.io/library/registry:2
+        env:
+          REGISTRY_PROXY_REMOTEURL: https://gcr.io
+          REGISTRY_STORAGE: filesystem
+          REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+          REGISTRY_STORAGE_CACHE_BLOBDESCRIPTOR: inmemory
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        ports:
+          - "5002:5000"
+        volumes:
+          - /var/lib/registry/gcr:/var/lib/registry
+        detach: true
+        restart: "yes"
+        restart_policy: "always"
+
+    - name: Create proxy cache for ghcr.io
+      containers.podman.podman_container:
+        name: ghcr
+        image: docker.io/library/registry:2
+        env:
+          REGISTRY_PROXY_REMOTEURL: https://ghcr.io
+          REGISTRY_STORAGE: filesystem
+          REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+          REGISTRY_STORAGE_CACHE_BLOBDESCRIPTOR: inmemory
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        ports:
+          - "5003:5000"
+        volumes:
+          - /var/lib/registry/ghcr:/var/lib/registry
+        detach: true
+        restart: "yes"
+        restart_policy: "always"
+
+    - name: Create proxy cache for quay.io
+      containers.podman.podman_container:
+        name: quay
+        image: docker.io/library/registry:2
+        env:
+          REGISTRY_PROXY_REMOTEURL: https://quay.io
+          REGISTRY_STORAGE: filesystem
+          REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+          REGISTRY_STORAGE_CACHE_BLOBDESCRIPTOR: inmemory
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        ports:
+          - "5004:5000"
+        volumes:
+          - /var/lib/registry/quay:/var/lib/registry
+        detach: true
+        restart: "yes"
+        restart_policy: "always"
+
+    - name: Give 30s to for each container to start
+      ansible.builtin.pause:
+        seconds: 30
+
+    # - name: Test if cache for X is answering
